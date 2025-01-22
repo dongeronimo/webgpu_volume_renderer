@@ -1,0 +1,53 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Logs
+*.log
+*.log.*
+
+# Dependency directories
+jspm_packages/
+
+# Vite-specific
+dist/
+.vite/
+.vitepress/cache/
+temp/
+
+# Build files
+*.tsbuildinfo
+
+# Editor directories and files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# System files
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.*.local
+
+# Testing
+coverage/
+*.lcov
+
+# Lock files (if you use a specific package manager, remove the others)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Others
+*.swp
+*.swm
+*.swo
+*.bak
+*.tmp
+*.temp

@@ -1,0 +1,23 @@
+{
+    "name": "webgpu-volume-renderer",
+    "version": "1.0.0",
+    "description": "WebGPU Volume Renderer",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview"
+    },
+    "dependencies": {
+        "@webgpu/types": "^0.1.40",
+        "dicom-parser": "^1.8.21",
+        "gl-matrix": "^3.4.3",
+        "three": "^0.172.0",
+        "webgpu-volume-renderer": "file:"
+    },
+    "devDependencies": {
+        "@types/gl-matrix": "^2.4.5",
+        "@types/three": "^0.172.0",
+        "typescript": "^5.7.3",
+        "vite": "^5.0.0"
+    }
+}

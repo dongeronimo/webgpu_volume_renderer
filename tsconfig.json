@@ -1,0 +1,58 @@
+{
+    "compilerOptions": {
+      // Specify ECMAScript target version
+      // ES2020 is needed for WebGPU support and modern JavaScript features
+      "target": "ES2020",
+      
+      // Enable stricter inference for data properties on `this`
+      "useDefineForClassFields": true,
+      
+      // Specify module code generation
+      // ESNext allows for the latest JavaScript module syntax
+      "module": "ESNext",
+      
+      // List of library files to be included in the compilation
+      "lib": ["ES2020", "DOM", "DOM.Iterable"],
+      
+      // Skip type checking of declaration files
+      // Useful when some declaration files are problematic
+      "skipLibCheck": true,
+      
+      // Specify module resolution strategy
+      // "bundler" is optimized for bundlers like Vite
+      "moduleResolution": "bundler",
+      
+      // Allow imports to include .ts extensions
+      "allowImportingTsExtensions": true,
+      
+      // Allow importing JSON modules
+      "resolveJsonModule": true,
+      
+      // Ensure each file can be safely transpiled without relying on other imports
+      "isolatedModules": true,
+      
+      // Do not emit outputs (Vite handles this)
+      "noEmit": true,
+      
+      // Enable all strict type checking options
+      "strict": true,
+      
+      // Report errors on unused locals
+      "noUnusedLocals": true,
+      
+      // Report errors on unused parameters
+      "noUnusedParameters": true,
+      
+      // Report errors for fallthrough cases in switch statements
+      "noFallthroughCasesInSwitch": true,
+      
+      // Include WebGPU type definitions
+      "types": ["@webgpu/types"]
+    },
+    
+    // Specify which files to include in the compilation
+    "include": ["src/**/*"],
+    
+    // Specify which files to exclude from the compilation
+    "exclude": ["node_modules", "dist"]
+  }
