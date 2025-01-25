@@ -72,7 +72,6 @@ export class DicomSeriesLoader {
                         windowCenter: dataSet.float('x00281050'),
                         windowWidth: dataSet.float('x00281051'),
                     };
-                    
                     resolve(metadata);
                 } catch (error) {
                     reject(error);
@@ -107,7 +106,7 @@ export class DicomSeriesLoader {
     }
 
     // Get pixel data as Float32Array with rescale slope and intercept applied
-    async getPixelData(metadata, device:GPUDevice) {
+    async getPixelData(metadata:DicomMetadata, device:GPUDevice) {
         // Access the pixel data via the dataset
         const byteArray = metadata.pixelData.dataSet.byteArray;
         const offset = metadata.pixelData.dataOffset;
@@ -125,7 +124,7 @@ export class DicomSeriesLoader {
         const rawFloatData = new Float32Array(pixelData.length);
         //return await rescalePixelData(device, rawFloatData, {slope:metadata.slope, intercept:metadata.intercept});
         for (let i = 0; i < pixelData.length; i++) {
-            rawFloatData[i] = pixelData[i] * metadata.slope + metadata.intercept;
+            rawFloatData[i] = pixelData[i];// * metadata.slope + metadata.intercept;
         }    
         return rawFloatData;
     }
@@ -210,7 +209,8 @@ export async function createDicom3DTexture(
         dimension: '3d',
         format: 'r32float',  // Single channel 32-bit float
         usage: GPUTextureUsage.TEXTURE_BINDING | 
-               GPUTextureUsage.COPY_DST 
+               GPUTextureUsage.COPY_DST |
+               GPUTextureUsage.STORAGE_BINDING
     });
 
     // Create a temporary buffer to copy data to GPU

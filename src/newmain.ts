@@ -3,6 +3,8 @@ import { createDicom3DTexture, Dicom3dTexture, DicomMetadata, DicomSeriesLoader,
 import { OffscreenPass } from "./offscreenPass";
 import { QuadRenderer } from "./quadRenderer";
 import { VolumeRenderer, VolumeRendererUniforms } from "./volumeRenderer";
+import { DicomSlopeInterceptOperation, MinMaxReductionOperation } from "./compute";
+import { GPUMinMaxReducer } from "./minMaxCompute";
 type offscreenPassCallback = (dt:number, commandEncoder:GPURenderPassEncoder)=>void;
 class MyWebGPURenderer {
     private adapter:GPUAdapter|null = null;
@@ -99,6 +101,7 @@ async function ReadDicomFromDisk(){
 }
 let dicomTextureObject:Dicom3dTexture;
 let volumeRenderer:VolumeRenderer;
+let slopeInterceptResult: GPUTexture;
 async function main() {
     let canRender = true;
     const renderer:MyWebGPURenderer = new MyWebGPURenderer();
@@ -106,6 +109,44 @@ async function main() {
     const dicomMetadataList:DicomMetadata[] = await ReadDicomFromDisk();
     dicomTextureObject = await createDicom3DTexture(renderer.Device(), dicomMetadataList, seriesLoader);
     dicomTextureObject.texture.label = "dicomTexture";
+    //now we run the compute shaders on the image
+    //1)Get the encoder and set some constants
+    const slopeRescaleCommandEncoder = renderer.Device().createCommandEncoder();
+    const width = dicomMetadataList[0].columns;
+    const height = dicomMetadataList[0].rows;
+    const depth = dicomMetadataList.length;
+    //2) do the slope-intercept calculation
+    const slopeInterceptOperation:DicomSlopeInterceptOperation = 
+        new DicomSlopeInterceptOperation(
+            renderer.Device(), 
+            dicomMetadataList[0].slope, 
+            dicomMetadataList[0].intercept);
+    slopeInterceptResult = renderer.Device().createTexture({
+        size: [width, height, depth],
+        dimension: '3d',
+        label:"slopeInterceptOutput",
+        format: 'r32float',  // Single channel 32-bit float
+        usage: GPUTextureUsage.TEXTURE_BINDING | 
+               GPUTextureUsage.COPY_DST |
+               GPUTextureUsage.STORAGE_BINDING |
+               GPUTextureUsage.COPY_SRC
+    });
+    slopeInterceptOperation.execute(slopeRescaleCommandEncoder, {
+        inputTexture: dicomTextureObject.texture,
+        outputTexture: slopeInterceptResult,
+    },{x:1, y:1, z:1});
+    const slopeInterceptCommandBuffer = slopeRescaleCommandEncoder.finish();
+    renderer.Device().queue.submit([slopeInterceptCommandBuffer]);
+    await renderer.Device().queue.onSubmittedWorkDone();
+    
+    const minMaxReducer:GPUMinMaxReducer = new GPUMinMaxReducer(renderer.Device());
+    const commandEncoder = renderer.Device().createCommandEncoder();
+    minMaxReducer.execute(commandEncoder, slopeInterceptResult, [width, height, depth]);
+    renderer.Device().queue.submit([commandEncoder.finish()]);
+    
+    const { min, max } = await minMaxReducer.getMinMaxValues();
+
+    console.log("values ", min, max);
     volumeRenderer = new VolumeRenderer(renderer.Device(), dicomTextureObject.view);
     await volumeRenderer.initialize(renderer.Format());
     let alpha = 0;
