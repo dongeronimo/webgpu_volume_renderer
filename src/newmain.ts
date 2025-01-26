@@ -5,6 +5,7 @@ import { QuadRenderer } from "./quadRenderer";
 import { VolumeRenderer, VolumeRendererUniforms } from "./volumeRenderer";
 import { DicomSlopeInterceptOperation, MinMaxReductionOperation } from "./compute";
 import { GPUMinMaxReducer } from "./minMaxCompute";
+import { R32toRGBA8Converter } from "./r32Torgba8converter";
 type offscreenPassCallback = (dt:number, commandEncoder:GPURenderPassEncoder)=>void;
 class MyWebGPURenderer {
     private adapter:GPUAdapter|null = null;
@@ -102,6 +103,8 @@ async function ReadDicomFromDisk(){
 let dicomTextureObject:Dicom3dTexture;
 let volumeRenderer:VolumeRenderer;
 let slopeInterceptResult: GPUTexture;
+
+
 async function main() {
     let canRender = true;
     const renderer:MyWebGPURenderer = new MyWebGPURenderer();
@@ -138,8 +141,17 @@ async function main() {
     const slopeInterceptCommandBuffer = slopeRescaleCommandEncoder.finish();
     renderer.Device().queue.submit([slopeInterceptCommandBuffer]);
     await renderer.Device().queue.onSubmittedWorkDone();
-    
+    //3) do a min/max reduction to know the min and max values of the image after the slope and intercept.
     const minMaxReducer:GPUMinMaxReducer = new GPUMinMaxReducer(renderer.Device());
+    const minMaxCommandEncoder = renderer.Device().createCommandEncoder();
+    minMaxReducer.execute(minMaxCommandEncoder, slopeInterceptResult, [width, height, depth]);
+    renderer.Device().queue.submit([minMaxCommandEncoder.finish()]);
+    const result = await minMaxReducer.getMinMaxValues();
+    console.log(result);
+    //4) convert the image to a rgba8f image with the gradient in rgb and the normalized scalar in a
+    const r32torgba8Converter = new R32toRGBA8Converter(renderer.Device());
+    
+
     const commandEncoder = renderer.Device().createCommandEncoder();
     minMaxReducer.execute(commandEncoder, slopeInterceptResult, [width, height, depth]);
     renderer.Device().queue.submit([commandEncoder.finish()]);

@@ -15,9 +15,6 @@ export class GPUMinMaxReducer {
                 }
 
                 struct Params {
-                    num_groups_x: u32,
-                    num_groups_y: u32,
-                    num_groups_z: u32,
                     width: u32,
                     height: u32,
                     depth: u32,
@@ -30,12 +27,13 @@ export class GPUMinMaxReducer {
                 var<workgroup> shared_min: array<f32, 256>;
                 var<workgroup> shared_max: array<f32, 256>;
 
-                @compute @workgroup_size(256)
-                fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(local_invocation_id) local_id: vec3<u32>) {
+                @compute @workgroup_size(8, 8, 4)
+                fn main(@builtin(global_invocation_id) global_id: vec3<u32>, @builtin(local_invocation_id) local_id: vec3<u32>, @builtin(workgroup_id) wg_id: vec3<u32>) {
+                    let local_index = local_id.x + local_id.y * 8u + local_id.z * 64u;
+                    
                     var local_min = f32(3.402823466e+38);
                     var local_max = f32(-3.402823466e+38);
                     
-                    // Check if within texture dimensions
                     if (global_id.x < params.width && 
                         global_id.y < params.height && 
                         global_id.z < params.depth) {
@@ -44,24 +42,25 @@ export class GPUMinMaxReducer {
                         local_max = value;
                     }
                     
-                    shared_min[local_id.x] = local_min;
-                    shared_max[local_id.x] = local_max;
+                    shared_min[local_index] = local_min;
+                    shared_max[local_index] = local_max;
                     
                     workgroupBarrier();
                     
-                    // Reduction using uniform control flow
-                    for (var offset = 256u / 2u; offset > 0u; offset /= 2u) {
-                        if (local_id.x < offset) {
-                            shared_min[local_id.x] = min(shared_min[local_id.x], shared_min[local_id.x + offset]);
-                            shared_max[local_id.x] = max(shared_max[local_id.x], shared_max[local_id.x + offset]);
+                    // Reduction within workgroup
+                    for (var offset = 128u; offset > 0u; offset = offset >> 1u) {
+                        if (local_index < offset) {
+                            shared_min[local_index] = min(shared_min[local_index], shared_min[local_index + offset]);
+                            shared_max[local_index] = max(shared_max[local_index], shared_max[local_index + offset]);
                         }
                         workgroupBarrier();
                     }
                     
-                    // Store final reduction result
-                    if (local_id.x == 0u) {
-                        let group_index = global_id.z * params.num_groups_y + global_id.y;
-                        min_max_buffer[group_index] = MinMax(shared_min[0], shared_max[0]);
+                    if (local_index == 0u) {
+                        let groups_x = u32(ceil(f32(params.width) / 8.0));
+                        let groups_y = u32(ceil(f32(params.height) / 8.0));
+                        let buffer_index = wg_id.x + wg_id.y * groups_x + wg_id.z * groups_x * groups_y;
+                        min_max_buffer[buffer_index] = MinMax(shared_min[0], shared_max[0]);
                     }
                 }
             `
@@ -73,19 +72,19 @@ export class GPUMinMaxReducer {
     execute(
         commandEncoder: GPUCommandEncoder, 
         inputTexture: GPUTexture,
-        dimensionSize:Array<number>
+        dims: number[]
     ) {
-        const workgroupSize = 256; // Fixed in shader
-        const numGroupsX = Math.ceil(dimensionSize[0] / workgroupSize);
-        const numGroupsY = Math.ceil(dimensionSize[1] / workgroupSize);
-        const numGroupsZ = Math.ceil(dimensionSize[2] / workgroupSize);
-        const numGroups = numGroupsX * numGroupsY * numGroupsZ;
+        const [width, height, depth] = dims;
+        const numGroupsX = Math.ceil(width / 8);
+        const numGroupsY = Math.ceil(height / 8);
+        const numGroupsZ = Math.ceil(depth / 4);
+        const totalGroups = numGroupsX * numGroupsY * numGroupsZ;
 
         if (this.minMaxBuffer) {
             this.minMaxBuffer.destroy();
         }
         this.minMaxBuffer = this.device.createBuffer({
-            size: numGroups * 8, // 4 bytes for min, 4 for max
+            size: totalGroups * 8,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
             mappedAtCreation: false
         });
@@ -100,20 +99,15 @@ export class GPUMinMaxReducer {
             });
         }
 
-        // Create uniform buffer for parameters
         const paramsBuffer = this.device.createBuffer({
-            size: 32, // 4 bytes * 8 for u32
+            size: 16,
             usage: GPUBufferUsage.UNIFORM,
             mappedAtCreation: true
         });
         const paramsData = new Uint32Array(paramsBuffer.getMappedRange());
-        paramsData.set([
-            numGroupsX, numGroupsY, numGroupsZ, 
-            dimensionSize[0], dimensionSize[1], dimensionSize[2]
-        ]);
+        paramsData.set([width, height, depth]);
         paramsBuffer.unmap();
 
-        // Create compute pass
         const computePass = commandEncoder.beginComputePass();
         computePass.setPipeline(this.pipeline);
         computePass.setBindGroup(0, this.device.createBindGroup({
@@ -124,6 +118,7 @@ export class GPUMinMaxReducer {
                 { binding: 2, resource: { buffer: paramsBuffer } }
             ]
         }));
+        
         computePass.dispatchWorkgroups(numGroupsX, numGroupsY, numGroupsZ);
         computePass.end();
     }
