@@ -40,10 +40,15 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn scalarToColor(v:f32) -> vec4<f32>{
     let level = 1500.0;
     let window = 400.0;
-    let windowBottom = level - window / 2;
-    let windowTop = level + window/2;
-    let windowedVal = (v - windowBottom) / (windowTop - windowBottom);
-    let sampledColor = clamp(windowedVal,0.0,1.0);
+     // First, denormalize the value back to its original range - remember that the val is normalized now.
+    let originalValue = mix(uniforms.minValue, uniforms.maxValue, v);
+    // Calculate window bounds in original value space
+    let windowBottom = level - window / 2.0;
+    let windowTop = level + window / 2.0;
+    // Apply window/level in original value space
+    let windowedVal = (originalValue - windowBottom) / (windowTop - windowBottom);
+    // Clamp the result to [0,1]
+    let sampledColor = clamp(windowedVal, 0.0, 1.0);
     return vec4<f32>(sampledColor);
 }
 
@@ -52,8 +57,8 @@ fn sampleVolume(pos: vec3f) -> f32 {
     // We need to map it to texture coordinates (0 to 1)
     let texCoords = (pos + 1.0) * 0.5;
     
-    // Now you can sample your volume texture
-    return textureSample(texture3D, volumeSampler, texCoords).r;
+    // Now you can sample your volume texture - remember that the normalized value is in the a channel.
+    return textureSample(texture3D, volumeSampler, texCoords).a;
 }
 
 fn worldDirectionToLocalDirection(worldDirection:vec3<f32>, modelMatrix:mat4x4f)->vec3<f32> {

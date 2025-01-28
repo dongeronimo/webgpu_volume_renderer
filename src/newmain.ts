@@ -103,7 +103,7 @@ async function ReadDicomFromDisk(){
 let dicomTextureObject:Dicom3dTexture;
 let volumeRenderer:VolumeRenderer;
 let slopeInterceptResult: GPUTexture;
-
+let textureWithGradient: GPUTexture;
 
 async function main() {
     let canRender = true;
@@ -150,16 +150,40 @@ async function main() {
     console.log(result);
     //4) convert the image to a rgba8f image with the gradient in rgb and the normalized scalar in a
     const r32torgba8Converter = new R32toRGBA8Converter(renderer.Device());
-    
+    const conversionCommandEncoder = renderer.Device().createCommandEncoder();
+    textureWithGradient = renderer.Device().createTexture({
+        size: [width, height, depth],
+        dimension: '3d',
+        label: "rgbaOutput",
+        format: 'rgba16float',
+        usage: GPUTextureUsage.TEXTURE_BINDING |   
+               GPUTextureUsage.STORAGE_BINDING |   
+               GPUTextureUsage.COPY_DST |        
+               GPUTextureUsage.COPY_SRC          
+    });
+    r32torgba8Converter.execute(conversionCommandEncoder, {
+        inputTexture: slopeInterceptResult, 
+        outputTexture: textureWithGradient, 
+        dimensions: [width, height, depth],
+        maxValue : result.max,
+        minValue : result.min,
+        gradientScale: 1.0
+    });
+    renderer.Device().queue.submit([conversionCommandEncoder.finish()]);
+    await renderer.Device().queue.onSubmittedWorkDone();
 
-    const commandEncoder = renderer.Device().createCommandEncoder();
-    minMaxReducer.execute(commandEncoder, slopeInterceptResult, [width, height, depth]);
-    renderer.Device().queue.submit([commandEncoder.finish()]);
-    
-    const { min, max } = await minMaxReducer.getMinMaxValues();
+    const size = textureWithGradient.width * textureWithGradient.height;
+    console.log('Output texture properties:', {
+        width: textureWithGradient.width,
+        height: textureWithGradient.height,
+        depth: textureWithGradient.depthOrArrayLayers,
+        format: textureWithGradient.format,
+        usage: textureWithGradient.usage
+    });
 
-    console.log("values ", min, max);
-    volumeRenderer = new VolumeRenderer(renderer.Device(), dicomTextureObject.view);
+    const finalTextureView = textureWithGradient.createView();
+    //5) create the volume renderer
+    volumeRenderer = new VolumeRenderer(renderer.Device(), finalTextureView);
     await volumeRenderer.initialize(renderer.Format());
     let alpha = 0;
     const speed = 0.34906585;
@@ -185,10 +209,10 @@ async function main() {
             viewMatrix: view,
             projectionMatrix: perspective,
             cameraPosition: vec3.fromValues(x, 0, z),
-            stepSize: 0.01,
-            maxSteps: 100,
-            minValue: 0.0,
-            maxValue: 1.0
+            stepSize: 0.01, //TODO: ignored for now
+            maxSteps: 100, //TODO: ignored for now
+            minValue: result.min,
+            maxValue: result.max
         };
         volumeRenderer.updateUniforms(uniforms);
         renderer.render((dt:number, commandEncoder:GPURenderPassEncoder)=>{

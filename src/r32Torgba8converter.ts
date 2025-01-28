@@ -12,22 +12,19 @@ export class R32toRGBA8Converter {
         const bindGroupLayout = this.device.createBindGroupLayout({
             entries: [
                 {
-                    // Input texture must be storage texture since we need random access for gradient calculation
                     binding: 0,
                     visibility: GPUShaderStage.COMPUTE,
-                    storageTexture: {
-                        access: 'read-only',
-                        format: 'r32float',
-                        viewDimension: '3d',
+                    texture: {
+                        sampleType: "unfilterable-float",
+                        viewDimension: "3d",
                     }
                 },
                 {
-                    // Output texture for the RGBA8 result
                     binding: 1,
                     visibility: GPUShaderStage.COMPUTE,
                     storageTexture: {
                         access: 'write-only',
-                        format: 'rgba8unorm',
+                        format: 'rgba16float',
                         viewDimension: '3d',
                     }
                 },
@@ -67,29 +64,22 @@ export class R32toRGBA8Converter {
     ) {
         const { inputTexture, outputTexture, dimensions, minValue, maxValue, gradientScale = 1.0 } = params;
 
-        // Uniform buffer layout (must be 16-byte aligned):
-        // offset 0:  min_value (f32)
-        // offset 4:  max_value (f32)
-        // offset 8:  dimensions.x (u32)
-        // offset 12: dimensions.y (u32)
-        // offset 16: dimensions.z (u32)
-        // offset 20: gradient_scale (f32)
-        // offset 24: padding (8 bytes to maintain 16-byte alignment)
+        // Create uniform buffer with proper alignment
         const uniformBuffer = this.device.createBuffer({
-            size: 32, // 24 bytes of data + 8 bytes padding for 16-byte alignment
+            size: 32,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             mappedAtCreation: true,
         });
 
         new Float32Array(uniformBuffer.getMappedRange()).set([
-            minValue,           // min_value: f32
-            maxValue,           // max_value: f32
-            dimensions[0],      // texture_dimensions.x: u32 as f32
-            dimensions[1],      // texture_dimensions.y: u32 as f32
-            dimensions[2],      // texture_dimensions.z: u32 as f32
-            gradientScale,      // gradient_scale: f32
-            0.0,               // padding[0] for 16-byte alignment
-            0.0,               // padding[1] for 16-byte alignment
+            minValue,
+            maxValue,
+            dimensions[0],
+            dimensions[1],
+            dimensions[2],
+            gradientScale,
+            0.0,
+            0.0,
         ]);
         uniformBuffer.unmap();
 
@@ -106,13 +96,9 @@ export class R32toRGBA8Converter {
         computePass.setPipeline(this.pipeline);
         computePass.setBindGroup(0, bindGroup);
 
-        // Calculate workgroups to exactly match image dimensions
-        // Each workgroup processes 8x8x8 voxels, so we need to round up
-        const workgroupsX = Math.ceil(dimensions[0] / 8);
-        const workgroupsY = Math.ceil(dimensions[1] / 8);
-        const workgroupsZ = Math.ceil(dimensions[2] / 8);
-
-        // Dispatch exactly enough workgroups to cover all voxels
+        const workgroupsX = Math.ceil(dimensions[0] / 4);
+        const workgroupsY = Math.ceil(dimensions[1] / 4);
+        const workgroupsZ = Math.ceil(dimensions[2] / 4);
         computePass.dispatchWorkgroups(workgroupsX, workgroupsY, workgroupsZ);
         computePass.end();
     }
@@ -126,58 +112,36 @@ struct Uniforms {
     gradient_scale: f32,
 }
 
-@group(0) @binding(0) var input_texture: texture_storage_3d<r32float, read>;
-@group(0) @binding(1) var output_texture: texture_storage_3d<rgba8unorm, write>;
+@group(0) @binding(0) var input_texture: texture_3d<f32>;
+@group(0) @binding(1) var output_texture: texture_storage_3d<rgba16float, write>;
 @group(0) @binding(2) var<uniform> uniforms: Uniforms;
 
-fn get_normalized_value(value: f32) -> f32 {
-    return saturate((value - uniforms.min_value) / (uniforms.max_value - uniforms.min_value));
+fn sample_normalized(pos:vec3<i32>)->f32{
+    let raw = textureLoad(input_texture, pos, 0).r;
+    let normalized = (raw - uniforms.min_value) / (uniforms.max_value - uniforms.min_value);
+    return normalized;
 }
 
-fn calculate_gradient(pos: vec3<u32>) -> vec3<f32> {
-    var gradient: vec3<f32>;
-    let dims = uniforms.texture_dimensions;
-    
-    // Calculate X gradient with proper bounds checking
-    let x1 = textureLoad(input_texture, 
-        vec3<u32>(max(pos.x, 1u) - 1u, pos.y, pos.z)).r;
-    let x2 = textureLoad(input_texture, 
-        vec3<u32>(min(pos.x + 1u, dims.x - 1u), pos.y, pos.z)).r;
-    gradient.x = (x2 - x1) * 0.5;
-    
-    // Calculate Y gradient with proper bounds checking
-    let y1 = textureLoad(input_texture, 
-        vec3<u32>(pos.x, max(pos.y, 1u) - 1u, pos.z)).r;
-    let y2 = textureLoad(input_texture, 
-        vec3<u32>(pos.x, min(pos.y + 1u, dims.y - 1u), pos.z)).r;
-    gradient.y = (y2 - y1) * 0.5;
-    
-    // Calculate Z gradient with proper bounds checking
-    let z1 = textureLoad(input_texture, 
-        vec3<u32>(pos.x, pos.y, max(pos.z, 1u) - 1u)).r;
-    let z2 = textureLoad(input_texture, 
-        vec3<u32>(pos.x, pos.y, min(pos.z + 1u, dims.z - 1u))).r;
-    gradient.z = (z2 - z1) * 0.5;
-    
-    return gradient * uniforms.gradient_scale;
-}
-
-@compute @workgroup_size(8, 8, 8)
+@compute @workgroup_size(4, 4, 4)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let dims = uniforms.texture_dimensions;
-    let is_in_bounds = global_id.x < dims.x && 
-                      global_id.y < dims.y && 
-                      global_id.z < dims.z;
-    
-    // We must perform texture operations uniformly
-    let original_value = textureLoad(input_texture, global_id).r;
-    let normalized_value = get_normalized_value(original_value);
-    let gradient = calculate_gradient(global_id);
-    let gradient_color = abs(gradient);
-    let result = vec4<f32>(gradient_color, normalized_value);
-    
-    if (is_in_bounds) {
-        textureStore(output_texture, global_id, result);
-    }
+    ///the position in the 3d texture
+    let pos = vec3<i32>(global_id);
+    //finite differences - dx
+    let x1 = pos + vec3<i32>(pos.x+1, pos.y, pos.z);
+    let x2 = pos + vec3<i32>(pos.x-1, pos.y, pos.z);
+    let dx = (sample_normalized(x1)-sample_normalized(x2))/2.0;
+    //finite differences - dy
+    let y1 = pos + vec3<i32>(pos.x, pos.y+1, pos.z);
+    let y2 = pos + vec3<i32>(pos.x, pos.y-1, pos.z);
+    let dy = (sample_normalized(y1)-sample_normalized(y2))/2.0;
+    //finite differences - dz
+    let z1 = pos + vec3<i32>(pos.x, pos.y, pos.z+1);
+    let z2 = pos + vec3<i32>(pos.x, pos.y, pos.z-1);
+    let dz = (sample_normalized(z1)-sample_normalized(z2))/2.0;
+    //final gradient
+    let gradient = vec3<f32>(dx, dy, dz); //* uniforms.gradient_scale;
+    let value = sample_normalized(pos);
+
+    textureStore(output_texture, global_id, vec4<f32>(gradient, value));
 }
 `;
