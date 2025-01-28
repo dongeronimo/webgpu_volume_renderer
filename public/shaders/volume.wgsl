@@ -40,13 +40,11 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 fn scalarToColor(v:f32) -> vec4<f32>{
     let level = 1500.0;
     let window = 400.0;
-     // First, denormalize the value back to its original range - remember that the val is normalized now.
-    let originalValue = mix(uniforms.minValue, uniforms.maxValue, v);
     // Calculate window bounds in original value space
     let windowBottom = level - window / 2.0;
     let windowTop = level + window / 2.0;
     // Apply window/level in original value space
-    let windowedVal = (originalValue - windowBottom) / (windowTop - windowBottom);
+    let windowedVal = (v - windowBottom) / (windowTop - windowBottom);
     // Clamp the result to [0,1]
     let sampledColor = clamp(windowedVal, 0.0, 1.0);
     return vec4<f32>(sampledColor);

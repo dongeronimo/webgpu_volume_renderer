@@ -118,8 +118,9 @@ struct Uniforms {
 
 fn sample_normalized(pos:vec3<i32>)->f32{
     let raw = textureLoad(input_texture, pos, 0).r;
-    let normalized = (raw - uniforms.min_value) / (uniforms.max_value - uniforms.min_value);
-    return normalized;
+    return raw;
+    //let normalized = (raw - uniforms.min_value) / (uniforms.max_value - uniforms.min_value);
+    //return normalized;
 }
 
 @compute @workgroup_size(4, 4, 4)
