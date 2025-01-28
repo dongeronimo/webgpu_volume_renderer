@@ -77,9 +77,9 @@ export class VolumeRenderer {
 
         // Create sampler
         this.sampler = device.createSampler({
-            magFilter: 'nearest',  // Changed from 'linear' to 'nearest'
-            minFilter: 'nearest',  // Changed from 'linear' to 'nearest'
-            mipmapFilter: 'nearest',  // Changed from 'linear' to 'nearest'
+            magFilter: 'linear',  
+            minFilter: 'linear',  
+            mipmapFilter: 'linear',  
             addressModeU: 'clamp-to-edge',
             addressModeV: 'clamp-to-edge',
             addressModeW: 'clamp-to-edge'
@@ -98,14 +98,14 @@ export class VolumeRenderer {
                     binding: 0,
                     visibility: GPUShaderStage.FRAGMENT,
                     texture: {
-                        sampleType: "unfilterable-float",  // Changed from unfilterable-float
+                        sampleType: "float",  // Changed from "unfilterable-float" since RGBA8 is filterable
                         viewDimension: "3d",
                     },    
                 },
                 {
                     binding: 1,
-                    visibility: GPUShaderStage.FRAGMENT,  // Added visibility
-                    sampler: { type: 'non-filtering' }
+                    visibility: GPUShaderStage.FRAGMENT,
+                    sampler: { type: 'filtering' }  // Changed from 'non-filtering' to enable linear interpolation
                 }
             ]
         });
