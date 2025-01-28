@@ -33,7 +33,8 @@ const uniformBufferSize =
     4 + // stepSize (f32)
     4 + // maxSteps (i32)
     4 + // minValue (f32)
-    4; // maxValue (f32)
+    4 + // maxValue (f32)
+    16; //imageDimension(vec3 + 1 padding for alignment)
 
 export interface VolumeRendererUniforms {
     modelMatrix: mat4;
@@ -44,6 +45,7 @@ export interface VolumeRendererUniforms {
     maxSteps: number;
     minValue: number;
     maxValue: number;
+    imageDimension: vec3;
 }
 
 
@@ -251,6 +253,9 @@ export class VolumeRenderer {
         offset += 4;
         
         dataView.setFloat32(offset, uniforms.maxValue, true);
+        offset += 4;
+
+        offset = writeVec3(dataView, offset, uniforms.imageDimension);
     
         this.device.queue.writeBuffer(this.uniformBuffer, 0, uniformData);
     }

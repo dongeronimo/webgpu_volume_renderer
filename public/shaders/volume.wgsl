@@ -7,6 +7,7 @@ struct Uniforms {
     maxSteps: i32,
     minValue: f32,
     maxValue: f32,
+    imageDimensions: vec3<f32>
 }
 
 struct VertexInput {
@@ -116,7 +117,9 @@ fn marchRay(_position:vec3<f32>, direction:vec3<f32>, stepSize:f32, maxSteps:i32
 }
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    let dimensions = vec3<f32>(256, 256, 94); //TODO: must come from the uniforms.
+    let dimensions = vec3<f32>(uniforms.imageDimensions[0], 
+        uniforms.imageDimensions[1], 
+        uniforms.imageDimensions[2]); //TODO: must come from the uniforms.
     let worldDirection = normalize(in.worldPos - uniforms.cameraPosition);
     let localDirection = worldDirectionToLocalDirection(worldDirection, uniforms.modelMatrix);
     let result = marchRay(in.worldPos, worldDirection, 0.01, 1024);

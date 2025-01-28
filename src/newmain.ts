@@ -212,7 +212,8 @@ async function main() {
             stepSize: 0.01, //TODO: ignored for now
             maxSteps: 100, //TODO: ignored for now
             minValue: result.min,
-            maxValue: result.max
+            maxValue: result.max,
+            imageDimension: [width, height, depth]
         };
         volumeRenderer.updateUniforms(uniforms);
         renderer.render((dt:number, commandEncoder:GPURenderPassEncoder)=>{
